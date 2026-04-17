@@ -1,5 +1,5 @@
 const { Client, GatewayIntentBits } = require('discord.js');
-const { joinVoiceChannel } = require('@discordjs/voice');
+const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 
 const client = new Client({
   intents: [
@@ -8,19 +8,26 @@ const client = new Client({
   ]
 });
 
-// ambil dari Railway ENV
+// ENV
 const TOKEN = process.env.TOKEN;
+
+// server idle
 const GUILD_ID = process.env.GUILD_ID;
 const VOICE_CHANNEL_ID = process.env.VOICE_CHANNEL_ID;
+
+// server follow
+const FOLLOW_GUILD_ID = process.env.FOLLOW_GUILD_ID;
+const USER_ID = process.env.USER_ID;
 
 client.on('ready', async () => {
   console.log(`Bot aktif sebagai ${client.user.tag}`);
 
+  // ===== SERVER IDLE =====
   const guild = client.guilds.cache.get(GUILD_ID);
-  if (!guild) return console.log('Guild tidak ditemukan');
+  if (!guild) return console.log('Guild idle tidak ditemukan');
 
   const channel = guild.channels.cache.get(VOICE_CHANNEL_ID);
-  if (!channel) return console.log('Channel tidak ditemukan');
+  if (!channel) return console.log('Channel idle tidak ditemukan');
 
   joinVoiceChannel({
     channelId: VOICE_CHANNEL_ID,
@@ -30,13 +37,21 @@ client.on('ready', async () => {
     selfDeaf: true
   });
 
-  console.log('Bot masuk voice & idle 🎧');
+  console.log('Bot idle di server utama 🎧');
 });
 
-// auto reconnect kalau keluar
+// ===== VOICE EVENT =====
 client.on('voiceStateUpdate', (oldState, newState) => {
-  if (oldState.member.id === client.user.id && !newState.channel) {
-    console.log('Bot keluar, reconnect...');
+
+  // =========================
+  // 🔁 RECONNECT SERVER IDLE
+  // =========================
+  if (
+    oldState.member.id === client.user.id &&
+    oldState.guild.id === GUILD_ID &&
+    !newState.channel
+  ) {
+    console.log('Bot idle keluar, reconnect...');
 
     setTimeout(() => {
       joinVoiceChannel({
@@ -47,6 +62,34 @@ client.on('voiceStateUpdate', (oldState, newState) => {
         selfDeaf: true
       });
     }, 3000);
+  }
+
+  // =========================
+  // 🎯 FOLLOW KAMU (SERVER LAIN)
+  // =========================
+  if (newState.guild.id !== FOLLOW_GUILD_ID) return;
+  if (newState.id !== USER_ID) return;
+
+  const guild = newState.guild;
+
+  // kamu masuk / pindah VC
+  if (newState.channelId) {
+    console.log(`Ngikut kamu ke ${newState.channel.name}`);
+
+    joinVoiceChannel({
+      channelId: newState.channelId,
+      guildId: guild.id,
+      adapterCreator: guild.voiceAdapterCreator,
+      selfMute: true,
+      selfDeaf: true
+    });
+  } 
+  // kamu keluar VC
+  else {
+    console.log('Kamu keluar VC, bot juga keluar');
+
+    const connection = getVoiceConnection(guild.id);
+    if (connection) connection.destroy();
   }
 });
 
